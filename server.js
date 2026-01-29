@@ -16,6 +16,13 @@ const {
     decompressShips,
     decompressHits
 } = require('./games-helpers/battleship-helpers');
+const {
+    reversiCreateInitialBoard,
+    reversiCompressBoard,
+    reversiDecompressBoard,
+    reversiUpdateBoard,
+    reversiFindAvailableMoves
+} = require('./games-helpers/reversi-helpers');
 
 const log4js = require('log4js');
 log4js.configure({
@@ -57,7 +64,7 @@ const addGame = (sid, login, gameId, token, mode, name) => {
         || !(login in users) // wrong login
         || users[login].token !== token // wrong token
         || !['PvP', 'PvE'].includes(mode) // wrong mode
-        || !['chess', 'battleship'].includes(name) // wrong game
+        || !['chess', 'battleship', 'reversi'].includes(name) // wrong game
     ) return;
 
     // allow only one game name (chess, battleship etc) at a time, for example only one 'chess' game for user
@@ -129,6 +136,14 @@ const addGame = (sid, login, gameId, token, mode, name) => {
         }
     }
 
+    if (name === 'reversi') {
+        games[gameId].moves = {
+            board: reversiCompressBoard(reversiCreateInitialBoard()),
+            current_move: 'white', // white always first,
+            in_progress: false,
+        }
+    }
+
     io.sockets.emit('list of games', games);
 }
 
@@ -170,6 +185,27 @@ const calcGameResult = (gameId) => {
             } else if (decompressedHitsBlack.filter(h => h === 2).length === 16
                 && decompressedHitsWhite.filter(h => h === 2).length < 16) {
                 games[gameId].result = 'black won';
+            } else if (games[gameId].players.black === null && games[gameId].players.white !== null) {
+                // Black retired
+                games[gameId].result = 'white won';
+            } else if (games[gameId].players.black !== null && games[gameId].players.white === null) {
+                // White retired
+                games[gameId].result = 'black won';
+            } else {
+                games[gameId].result = 'draw'; // somehow
+            }
+        }
+
+        if (games[gameId].name === 'reversi') {
+            let decompressBoard = reversiDecompressBoard(games[gameId].moves.board);
+            let countWhite = decompressBoard.filter(w => w === 1).length;
+            let countBlack = decompressBoard.filter(b => b === 2).length;
+            if (countWhite > countBlack) {
+                games[gameId].result = 'white won';
+            } else if (countBlack > countWhite) {
+                games[gameId].result = 'black won';
+            } else if (countWhite === countBlack) {
+                games[gameId].result = 'draw';
             } else if (games[gameId].players.black === null && games[gameId].players.white !== null) {
                 // Black retired
                 games[gameId].result = 'white won';
@@ -245,43 +281,47 @@ const updateGame = (command, gameId, login, token, move = '', name = '') => {
 
                 games[gameId].moves.in_progress = true;
 
-                let color = games[gameId].players.white === login
-                    ? 'white'
-                    : games[gameId].players.black === login
-                        ? 'black'
-                        : '';
-                if (color === '') return;
-                let opColor = color === 'white' ? 'black' : 'white';
+                try {
+                    let color = games[gameId].players.white === login
+                        ? 'white'
+                        : games[gameId].players.black === login
+                            ? 'black'
+                            : '';
+                    if (color === '') return;
+                    let opColor = color === 'white' ? 'black' : 'white';
 
-                if (games[gameId].moves.ready_check.white === false
-                    || games[gameId].moves.ready_check.black === false
-                ) {
-                    if (move?.ships?.length > 0) {
-                        games[gameId].moves.ships[color] = move.ships;
-                        games[gameId].moves.ready_check[color] = true;
-                    }
-                }
-
-                if (games[gameId]['moves']['ready_check']['white'] === true
-                    && games[gameId]['moves']['ready_check']['black'] === true
-                    && move?.x >= 0 && move?.x <= 9
-                    && move?.y >= 0 && move?.y <= 9) {
-
-                    // computer move triggers by player
-                    if (games[gameId].moves.current_move === 'black' && games[gameId].players?.black === 'Computer') {
-                        color = color === 'white' ? 'black' : 'white';
-                        opColor = opColor === 'white' ? 'black' : 'white';
+                    if (games[gameId].moves.ready_check.white === false
+                        || games[gameId].moves.ready_check.black === false
+                    ) {
+                        if (move?.ships?.length > 0) {
+                            games[gameId].moves.ships[color] = move.ships; // already compressed ships
+                            games[gameId].moves.ready_check[color] = true;
+                        }
                     }
 
-                    let updatedHitsAndShips = null;
-                    try {
-                        updatedHitsAndShips = checkMove(
-                            JSON.parse(JSON.stringify(decompressShips(games[gameId].moves.ships[opColor]))),
-                            parseInt(move.x),
-                            parseInt(move.y),
-                            JSON.parse(JSON.stringify(decompressHits(games[gameId].moves.hits[color]))),
-                        );
-                    } finally {
+                    if (games[gameId]['moves']['ready_check']['white'] === true
+                        && games[gameId]['moves']['ready_check']['black'] === true
+                        && move?.x >= 0 && move?.x <= 9
+                        && move?.y >= 0 && move?.y <= 9) {
+
+                        // computer move triggers by player
+                        if (games[gameId].moves.current_move === 'black' && games[gameId].players?.black === 'Computer') {
+                            color = color === 'white' ? 'black' : 'white';
+                            opColor = opColor === 'white' ? 'black' : 'white';
+                        }
+
+                        let updatedHitsAndShips = null;
+                        try {
+                            updatedHitsAndShips = checkMove(
+                                JSON.parse(JSON.stringify(decompressShips(games[gameId].moves.ships[opColor]))),
+                                parseInt(move.x),
+                                parseInt(move.y),
+                                JSON.parse(JSON.stringify(decompressHits(games[gameId].moves.hits[color]))),
+                            );
+                        } catch (error) {
+                            logger.error('Error updating board:', error);
+                            newBoard = null;
+                        }
                         if (updatedHitsAndShips) {
                             // change side on miss
                             if (!updatedHitsAndShips.isHit) {
@@ -299,10 +339,91 @@ const updateGame = (command, gameId, login, token, move = '', name = '') => {
                         }
                     }
 
+                    isUpdated = true;
+                } catch (error) {
+                    logger.error('Error processing reversi move:', error);
+                } finally {
+                    // always reset in_progress, no matter what happens
+                    games[gameId].moves.in_progress = false;
                 }
+            }
 
-                isUpdated = true;
-                games[gameId].moves.in_progress = false;
+            if (name === 'reversi'
+                && games[gameId].status !== 'finished'
+                && !games[gameId].moves.in_progress) {
+
+                games[gameId].moves.in_progress = true;
+
+                try {
+                    let color = games[gameId].players.white === login
+                        ? 'white'
+                        : games[gameId].players.black === login
+                            ? 'black'
+                            : '';
+                    let opColor = color === 'white' ? 'black' : 'white';
+
+                    // computer move triggers by player
+                    if (games[gameId].moves.current_move === 'black' && games[gameId].players?.black === 'Computer') {
+                        color = color === 'white' ? 'black' : 'white';
+                        opColor = opColor === 'white' ? 'black' : 'white';
+                    }
+
+                    if (color === '' || games[gameId].moves.current_move !== color) {
+                        return; // But we need to reset in_progress!
+                    }
+
+                    let newBoard = null;
+                    try {
+                        newBoard = reversiUpdateBoard(
+                            JSON.parse(JSON.stringify(reversiDecompressBoard(games[gameId].moves.board))),
+                            move,
+                            color
+                        );
+                    } catch (error) {
+                        logger.error('Error updating board:', error);
+                        newBoard = null;
+                    }
+
+                    if (newBoard) {
+                        games[gameId].moves.board = reversiCompressBoard(JSON.parse(JSON.stringify(newBoard)));
+
+                        if (newBoard.filter(cell => cell === 0).length === 0) {
+                            games[gameId].status = 'finished';
+                            calcGameResult(gameId);
+                        }
+                    }
+
+                    if (games[gameId].status !== 'finished') {
+                        // Change color to opposite if opposite can move
+                        let opAvailableMoves = reversiFindAvailableMoves(
+                            reversiDecompressBoard(games[gameId].moves.board),
+                            opColor
+                        );
+                        let availableMoves = reversiFindAvailableMoves(
+                            reversiDecompressBoard(games[gameId].moves.board),
+                            color
+                        );
+
+                        if (opAvailableMoves) {
+                            // opponent move if possible
+                            games[gameId].moves.current_move = opColor;
+                        } else if (availableMoves) {
+                            // side remain still if opponent have no possible moves
+                            games[gameId].moves.current_move = color;
+                        } else {
+                            // both players have no moves
+                            games[gameId].status = 'finished';
+                            calcGameResult(gameId);
+                        }
+                    }
+                    isUpdated = true;
+                } catch
+                    (error) {
+                    logger.error('Error processing reversi move:', error);
+                } finally {
+                    // always reset in_progress, no matter what happens
+                    games[gameId].moves.in_progress = false;
+                }
             }
 
         }
@@ -558,7 +679,7 @@ const clearDisconnectedUsers = (clientIp) => {
 }
 
 app.get('/', (req, res) => {
-    res.send('<h3>WebSocket Server</h3>');
+    res.send('<h3>LAN Games Server</h3>');
 });
 
 app.get('/clients', (req, res) => {
