@@ -9,12 +9,12 @@ const {Server} = require('socket.io');
 
 const {Chess} = require('chess.js');
 const {
-    checkMove,
-    generateRandomShips,
-    compressShips,
-    compressHits,
-    decompressShips,
-    decompressHits
+    battleshipCheckMove,
+    battleshipGenerateRandomShips,
+    battleshipCompressShips,
+    battleshipCompressHits,
+    battleshipDecompressShips,
+    battleshipDecompressHits
 } = require('./games-helpers/battleship-helpers');
 const {
     reversiCreateInitialBoard,
@@ -120,12 +120,12 @@ const addGame = (sid, login, gameId, token, mode, name) => {
                 black: mode !== 'PvP',
             },
             ships: {
-                white: compressShips(generateRandomShips().ships),
-                black: compressShips(generateRandomShips().ships), //mode === 'PvP' ? null : generateRandomShips().ships,
+                white: battleshipCompressShips(battleshipGenerateRandomShips().ships),
+                black: battleshipCompressShips(battleshipGenerateRandomShips().ships), //mode === 'PvP' ? null : battleshipGenerateRandomShips().ships,
             },
             hits: {
-                white: compressHits(new Array(100).fill(0)),
-                black: compressHits(new Array(100).fill(0)),
+                white: battleshipCompressHits(new Array(100).fill(0)),
+                black: battleshipCompressHits(new Array(100).fill(0)),
             },
             last_hit: {
                 white: null,
@@ -177,8 +177,8 @@ const calcGameResult = (gameId) => {
         }
 
         if (games[gameId].name === 'battleship') {
-            let decompressedHitsWhite = decompressHits(games[gameId].moves.hits.white);
-            let decompressedHitsBlack = decompressHits(games[gameId].moves.hits.black);
+            let decompressedHitsWhite = battleshipDecompressHits(games[gameId].moves.hits.white);
+            let decompressedHitsBlack = battleshipDecompressHits(games[gameId].moves.hits.black);
             if (decompressedHitsWhite.filter(h => h === 2).length === 16
                 && decompressedHitsBlack.filter(h => h === 2).length < 16) {
                 games[gameId].result = 'white won';
@@ -200,20 +200,19 @@ const calcGameResult = (gameId) => {
             let decompressBoard = reversiDecompressBoard(games[gameId].moves.board);
             let countWhite = decompressBoard.filter(w => w === 1).length;
             let countBlack = decompressBoard.filter(b => b === 2).length;
-            if (countWhite > countBlack) {
-                games[gameId].result = 'white won';
-            } else if (countBlack > countWhite) {
-                games[gameId].result = 'black won';
-            } else if (countWhite === countBlack) {
-                games[gameId].result = 'draw';
-            } else if (games[gameId].players.black === null && games[gameId].players.white !== null) {
+
+            if (games[gameId].players.black === null && games[gameId].players.white !== null) {
                 // Black retired
                 games[gameId].result = 'white won';
             } else if (games[gameId].players.black !== null && games[gameId].players.white === null) {
                 // White retired
                 games[gameId].result = 'black won';
+            } else if (countWhite > countBlack) {
+                games[gameId].result = 'white won';
+            } else if (countBlack > countWhite) {
+                games[gameId].result = 'black won';
             } else {
-                games[gameId].result = 'draw'; // somehow
+                games[gameId].result = 'draw';
             }
         }
 
@@ -312,11 +311,11 @@ const updateGame = (command, gameId, login, token, move = '', name = '') => {
 
                         let updatedHitsAndShips = null;
                         try {
-                            updatedHitsAndShips = checkMove(
-                                JSON.parse(JSON.stringify(decompressShips(games[gameId].moves.ships[opColor]))),
+                            updatedHitsAndShips = battleshipCheckMove(
+                                JSON.parse(JSON.stringify(battleshipDecompressShips(games[gameId].moves.ships[opColor]))),
                                 parseInt(move.x),
                                 parseInt(move.y),
-                                JSON.parse(JSON.stringify(decompressHits(games[gameId].moves.hits[color]))),
+                                JSON.parse(JSON.stringify(battleshipDecompressHits(games[gameId].moves.hits[color]))),
                             );
                         } catch (error) {
                             logger.error('Error updating board:', error);
@@ -328,8 +327,8 @@ const updateGame = (command, gameId, login, token, move = '', name = '') => {
                                 games[gameId].moves.current_move = opColor;
                             }
                             games[gameId].moves.last_hit[color] = move;
-                            games[gameId].moves.hits[color] = compressHits(updatedHitsAndShips.hits);
-                            games[gameId].moves.ships[opColor] = compressShips(updatedHitsAndShips.ships);
+                            games[gameId].moves.hits[color] = battleshipCompressHits(updatedHitsAndShips.hits);
+                            games[gameId].moves.ships[opColor] = battleshipCompressShips(updatedHitsAndShips.ships);
 
 
                             if (updatedHitsAndShips.isGameOver) {
@@ -493,6 +492,53 @@ const schedulingClearGames = setInterval(
 
 const stopwords = [
     "stockfish",
+    "ass",
+    "arse",
+    "ball",
+    "bollock",
+    "cock",
+    "dick",
+    "prick",
+    "tits",
+    "boob",
+    "cunt",
+    "jesus",
+    "christ",
+    "jew",
+    "nigger",
+    "cretin",
+    "stupid",
+    "fool",
+    "bukkake",
+    "naz",
+    "путин",
+    "трамп",
+    "putin",
+    "trump",
+    "psych",
+    "псих",
+    "дурак",
+    "twat",
+    "fuck",
+    "wank",
+    "paki",
+    "shag",
+    "bugg",
+    "come",
+    "cum",
+    "sod",
+    "slut",
+    "dildo",
+    "god",
+    "bitch",
+    "whor",
+    "basta",
+    "piss",
+    "pussy",
+    "shit",
+    "crap",
+    "fart",
+    "suck",
     "admin",
     "user",
     "админ",
@@ -527,6 +573,8 @@ const stopwords = [
     "хуи",
     "хер",
     "говн",
+    "гавн",
+    "дерьм",
     "трах",
     "минет",
     "клит",
@@ -700,11 +748,15 @@ app.get('/clients', (req, res) => {
 
 app.get('/status', (req, res) => {
 
+    const serializedPayload = JSON.stringify(games);
+    const sizeInBytes = Buffer.byteLength(serializedPayload, 'utf8');
+
     res.status(200).json(
         {
             total_clients: io.engine.clientsCount,
             total_users: Object.keys(users).length,
             active_games: Object.keys(games).length,
+            gamesSizeInBytes: sizeInBytes,
             //users: users
         }
     )
