@@ -1,4 +1,4 @@
-const calculateCells = (ship) => {
+const battleshipCalculateCells = (ship) => {
     const cells = [];
     if (ship.direction === 'horizontal') {
         for (let i = 0; i < ship.length; i++) {
@@ -31,7 +31,7 @@ const getShipBounds = (ship) => {
 }
 
 // Function to check if two ships intersect or are too close
-const shipsIntersect = (ship1, ship2, requireSpacing = true) => {
+const battleshipShipsIntersect = (ship1, ship2, requireSpacing = true) => {
     // Quick bounding box check for efficiency
     const bounds1 = getShipBounds(ship1);
     const bounds2 = getShipBounds(ship2);
@@ -61,8 +61,8 @@ const shipsIntersect = (ship1, ship2, requireSpacing = true) => {
     }
 
     // Detailed check for intersection or proximity
-    const cells1 = calculateCells(ship1);
-    const cells2 = calculateCells(ship2);
+    const cells1 = battleshipCalculateCells(ship1);
+    const cells2 = battleshipCalculateCells(ship2);
 
     for (const cell1 of cells1) {
         for (const cell2 of cells2) {
@@ -88,7 +88,7 @@ const shipsIntersect = (ship1, ship2, requireSpacing = true) => {
 }
 
 // Function to check if a ship is valid (within grid)
-function isValidShip(ship) {
+function battleshipIsValidShip(ship) {
     if (ship.x < 0 || ship.y < 0 || ship.x > 9 || ship.y > 9) {
         return false;
     }
@@ -101,7 +101,7 @@ function isValidShip(ship) {
 }
 
 // Function to check intersection of multiple ships
-const checkShipsIntersection = (ships, requireSpacing = true) => {
+const battleshipCheckShipsIntersection = (ships, requireSpacing = true) => {
     const results = {
         valid: true,
         intersections: [],
@@ -110,7 +110,7 @@ const checkShipsIntersection = (ships, requireSpacing = true) => {
 
     // First check if all ships are within grid
     for (let i = 0; i < ships.length; i++) {
-        if (!isValidShip(ships[i])) {
+        if (!battleshipIsValidShip(ships[i])) {
             results.valid = false;
             results.invalidShips.push({
                 shipIndex: i,
@@ -122,7 +122,7 @@ const checkShipsIntersection = (ships, requireSpacing = true) => {
     // Check pairwise intersections
     for (let i = 0; i < ships.length; i++) {
         for (let j = i + 1; j < ships.length; j++) {
-            if (shipsIntersect(ships[i], ships[j], requireSpacing)) {
+            if (battleshipShipsIntersect(ships[i], ships[j], requireSpacing)) {
                 results.valid = false;
                 results.intersections.push({
                     ship1Index: i,
@@ -137,7 +137,7 @@ const checkShipsIntersection = (ships, requireSpacing = true) => {
 }
 
 const markMissesAroundShip = (ship, hits) => {
-    const shipCells = calculateCells(ship);
+    const shipCells = battleshipCalculateCells(ship);
 
     shipCells.forEach(cell => {
         const x = cell.x;
@@ -184,7 +184,7 @@ function isShipSunk(ship, hits) {
 }
 
 // Check if a move hits any ship and return detailed result
-function checkMove(ships, moveX, moveY, hits) {
+function battleshipCheckMove(ships, moveX, moveY, hits) {
     const targetXyIndex = moveY * 10 + moveX;
     let s = JSON.parse(JSON.stringify(ships));
     let h = JSON.parse(JSON.stringify(hits)); // array of 100 elements with values of 0, 1 and 2. 0 - empty water, 1 - miss, 2 - hit
@@ -224,7 +224,7 @@ function checkMove(ships, moveX, moveY, hits) {
     };
 }
 
-const generateRandomShips = () => {
+const battleshipGenerateRandomShips = () => {
     const gridSize = 10;
     const ships = [
         {length: 5, placed: false},
@@ -321,7 +321,7 @@ const generateRandomShips = () => {
 
             if (attempts > maxAttempts) {
                 // Reset and try again if we get stuck
-                return generateRandomShips();
+                return battleshipGenerateRandomShips();
             }
 
             // Random position and direction
@@ -341,7 +341,7 @@ const generateRandomShips = () => {
 
         if (!placed) {
             // Reset and try again if we can't place this ship
-            return generateRandomShips();
+            return battleshipGenerateRandomShips();
         }
     }
 
@@ -405,7 +405,7 @@ function computerShoot(hits) {
 }
 
 // Улучшенная версия с "умной" логикой
-function smartComputerShoot(hits) {
+function battleshipSmartComputerShoot(hits) {
     const hitsString = hits.join(''); // Преобразуем в строку для удобства
 
     // Стратегия 1: Если есть раненый корабль, стреляем вокруг него
@@ -518,11 +518,7 @@ function shuffleArray(array) {
     return array;
 }
 
-const getRandomInt = (min, max) => {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-const compressShips = (ships) => {
+const battleshipCompressShips = (ships) => {
     return ships.map(ship => [
         ship.x,                    // 0: x coordinate (0-9)
         ship.y,                    // 1: y coordinate (0-9)
@@ -532,14 +528,14 @@ const compressShips = (ships) => {
     ]);
 }
 
-const decompressShips = (compressed) => {
+const battleshipDecompressShips = (compressed) => {
     let ship = compressed.map(ship => ({
         x: ship[0],
         y: ship[1],
         length: ship[2],
         direction: ship[3] === 1 ? 'vertical' : 'horizontal',
         isSank: ship[4] === 1,
-        cells: calculateCells({
+        cells: battleshipCalculateCells({
             x: ship[0],
             y: ship[1],
             length: ship[2],
@@ -550,7 +546,7 @@ const decompressShips = (compressed) => {
 }
 
 // Server
-function compressHits(hitsArray) {
+function battleshipCompressHits(hitsArray) {
     // 0=water, 1=miss, 2=hit → use 2 bits per cell
     let binaryStr = '';
     for (let i = 0; i < hitsArray.length; i += 4) {
@@ -564,7 +560,7 @@ function compressHits(hitsArray) {
 }
 
 // Client
-function decompressHits(compressedStr) {
+function battleshipDecompressHits(compressedStr) {
     const hits = new Array(100).fill(0);
     for (let i = 0; i < compressedStr.length; i++) {
         const byte = compressedStr.charCodeAt(i) - 32;
@@ -576,16 +572,15 @@ function decompressHits(compressedStr) {
 }
 
 export {
-    calculateCells,
-    shipsIntersect,
-    isValidShip,
-    checkShipsIntersection,
-    checkMove,
-    generateRandomShips,
-    smartComputerShoot,
-    getRandomInt,
-    compressShips,
-    decompressShips,
-    compressHits,
-    decompressHits
+    battleshipCalculateCells,
+    battleshipShipsIntersect,
+    battleshipIsValidShip,
+    battleshipCheckShipsIntersection,
+    battleshipCheckMove,
+    battleshipGenerateRandomShips,
+    battleshipSmartComputerShoot,
+    battleshipCompressShips,
+    battleshipDecompressShips,
+    battleshipCompressHits,
+    battleshipDecompressHits
 };
