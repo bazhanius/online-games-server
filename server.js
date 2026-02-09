@@ -23,6 +23,14 @@ const {
     reversiUpdateBoard,
     reversiFindAvailableMoves
 } = require('./games-helpers/reversi-helpers');
+const {
+    connect4CreateBoard,
+    connect4MakeMove,
+    connect4ConvertFlatBoardTo2D,
+    connect4Convert2dBoardToFlat,
+    connect4CompressBoard,
+    connect4DecompressBoard
+} = require('./games-helpers/connect4-helpers');
 
 const log4js = require('log4js');
 log4js.configure({
@@ -64,7 +72,7 @@ const addGame = (sid, login, gameId, token, mode, name) => {
         || !(login in users) // wrong login
         || users[login].token !== token // wrong token
         || !['PvP', 'PvE'].includes(mode) // wrong mode
-        || !['chess', 'battleship', 'reversi'].includes(name) // wrong game
+        || !['chess', 'battleship', 'reversi', 'connect4'].includes(name) // wrong game
     ) return;
 
     // allow only one game name (chess, battleship etc) at a time, for example only one 'chess' game for user
@@ -144,6 +152,14 @@ const addGame = (sid, login, gameId, token, mode, name) => {
         }
     }
 
+    if (name === 'connect4') {
+        games[gameId].moves = {
+            board: connect4CompressBoard(connect4Convert2dBoardToFlat(connect4CreateBoard())),
+            current_move: 'white', // white always first,
+            in_progress: false,
+        }
+    }
+
     io.sockets.emit('list of games', games);
 }
 
@@ -201,6 +217,22 @@ const calcGameResult = (gameId) => {
             let countWhite = decompressBoard.filter(w => w === 1).length;
             let countBlack = decompressBoard.filter(b => b === 2).length;
 
+            if (games[gameId].players.black === null && games[gameId].players.white !== null) {
+                // Black retired
+                games[gameId].result = 'white won';
+            } else if (games[gameId].players.black !== null && games[gameId].players.white === null) {
+                // White retired
+                games[gameId].result = 'black won';
+            } else if (countWhite > countBlack) {
+                games[gameId].result = 'white won';
+            } else if (countBlack > countWhite) {
+                games[gameId].result = 'black won';
+            } else {
+                games[gameId].result = 'draw';
+            }
+        }
+
+        if (games[gameId].name === 'connect4') {
             if (games[gameId].players.black === null && games[gameId].players.white !== null) {
                 // Black retired
                 games[gameId].result = 'white won';
@@ -340,7 +372,7 @@ const updateGame = (command, gameId, login, token, move = '', name = '') => {
 
                     isUpdated = true;
                 } catch (error) {
-                    logger.error('Error processing reversi move:', error);
+                    logger.error('Error processing battleship move:', error);
                 } finally {
                     // always reset in_progress, no matter what happens
                     games[gameId].moves.in_progress = false;
@@ -425,6 +457,68 @@ const updateGame = (command, gameId, login, token, move = '', name = '') => {
                 }
             }
 
+            if (name === 'connect4'
+                && games[gameId].status !== 'finished'
+                && !games[gameId].moves.in_progress) {
+
+                games[gameId].moves.in_progress = true;
+
+                try {
+                    let color = games[gameId].players.white === login
+                        ? 'white'
+                        : games[gameId].players.black === login
+                            ? 'black'
+                            : '';
+                    let opColor = color === 'white' ? 'black' : 'white';
+
+                    // computer move triggers by player
+                    if (games[gameId].moves.current_move === 'black' && games[gameId].players?.black === 'Computer') {
+                        color = color === 'white' ? 'black' : 'white';
+                        opColor = opColor === 'white' ? 'black' : 'white';
+                    }
+
+                    if (color === '' || games[gameId].moves.current_move !== color) {
+                        return; // But we need to reset in_progress!
+                    }
+
+                    let newBoard = null;
+                    try {
+                        newBoard = connect4MakeMove(
+                            connect4ConvertFlatBoardTo2D(connect4DecompressBoard(games[gameId].moves.board)),
+                            move.column,
+                            color
+                        );
+                    } catch (error) {
+                        logger.error('Error updating board:', error);
+                        newBoard = null;
+                    }
+
+                    if (newBoard && newBoard.success) {
+                        games[gameId].moves.board = connect4CompressBoard(connect4Convert2dBoardToFlat(newBoard.board));
+
+                        if (newBoard.isDraw || newBoard.isWin) {
+                            games[gameId].status = 'finished';
+                            if (newBoard.isDraw) {
+                                games[gameId].result = 'draw';
+                            }
+                            if (newBoard.isWin) {
+                                games[gameId].result = `${color} won`;
+                            }
+                        } else {
+                            games[gameId].moves.current_move = opColor;
+                        }
+                    }
+
+                    isUpdated = true;
+                } catch
+                    (error) {
+                    logger.error('Error processing connect4 move:', error);
+                } finally {
+                    // always reset in_progress, no matter what happens
+                    games[gameId].moves.in_progress = false;
+                }
+            }
+
         }
         if (command === 'game_over') {
             games[gameId].status = 'finished';
@@ -490,7 +584,8 @@ const schedulingClearGames = setInterval(
     msOneMinute * (process.env.CLEAR_GAMES_EACH_X_MIN || 10)
 );
 
-const stopwords = [
+const stopSymbols = /[\\\.\+\*\?\^\$\[\]\(\)\{\}\/\'\#\:\!\=\|\<\>\"\'\%\&]/ig;
+const stopWords = [
     "stockfish",
     "ass",
     "arse",
@@ -846,7 +941,8 @@ io.on('connection', (socket) => {
     socket.on('user is online', payload => {
         if (
             !payload.login
-            || stopwords.find((s) => payload.login.toLowerCase().indexOf(s) > -1)?.length > 0
+            || stopSymbols.test(payload.login) // login contains deprecated symbols
+            || stopWords.find((s) => payload.login.toLowerCase().indexOf(s) > -1)?.length > 0
             || (
                 payload.login in users && users[payload.login].token !== null // user already exists
                 && users[payload.login].token !== payload.token // token mismatch to user
@@ -859,7 +955,7 @@ io.on('connection', (socket) => {
             });
         } else if (
             !(payload.login in users) // no user already exists with this login
-            && !stopwords.includes(payload.login.toLowerCase()) // not deprecated login
+            && !stopWords.includes(payload.login.toLowerCase()) // not deprecated login
         ) {
             let newToken = uuidv4();
             users[payload.login] = {

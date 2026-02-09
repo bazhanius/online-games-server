@@ -1,7 +1,9 @@
 {
   "name": "web-socket-server",
-  "version": "1.0.0",
-  "description": "",
+  "version": "1.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "description": "Game server for games: chess, reversi, battleship, connect4",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,10 +12,10 @@
   "dependencies": {
     "chess.js": "^1.4.0",
     "cookie": "^1.0.2",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
+    "dotenv": "^17.2.4",
+    "express": "^5.2.1",
     "log4js": "^6.9.1",
-    "socket.io": "^4.8.1",
+    "socket.io": "^4.8.3",
     "uuid": "^13.0.0"
   }
 }
