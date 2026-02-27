@@ -1,9 +1,9 @@
 {
   "name": "web-socket-server",
-  "version": "1.1.0",
+  "version": "1.3.1",
   "private": true,
   "license": "UNLICENSED",
-  "description": "Game server for games: chess, reversi, battleship, connect4",
+  "description": "Game server for games: chess, reversi, battleship, four in a row, tic-tac-toe, nardy",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -11,8 +11,8 @@
   "author": "Alexander Bazhanov",
   "dependencies": {
     "chess.js": "^1.4.0",
-    "cookie": "^1.0.2",
-    "dotenv": "^17.2.4",
+    "cookie": "^1.1.1",
+    "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "log4js": "^6.9.1",
     "socket.io": "^4.8.3",

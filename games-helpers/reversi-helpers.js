@@ -36,9 +36,10 @@ function isValidCoordinate(x, y) {
  * Find all available moves for a player
  * @param {number[]} board - Current board state
  * @param {string} color - 'white' or 'black'
+ * @param {string} lvl - difficulty level
  * @returns {Array<{x: number, y: number, score: number}> | null} Array of moves with scores, sorted best to worst
  */
-function reversiFindAvailableMoves(board, color) {
+function reversiFindAvailableMoves(board, color, lvl = 'easy') {
     const player = color === 'white' ? 1 : 2;
     const opponent = color === 'white' ? 2 : 1;
     const moves = [];
@@ -78,6 +79,13 @@ function reversiFindAvailableMoves(board, color) {
 
             // If we can flip pieces in at least one direction, it's a valid move
             if (totalFlipped > 0) {
+                if (lvl === 'medium' &&
+                    ((x === 0 && y === 0)
+                        || (x === 0 && y === 7)
+                        || (x === 7 && y === 0)
+                        || (x === 7 && y === 7))) {
+                    totalFlipped += 100; // priority to capture corner
+                }
                 moves.push({x, y, score: totalFlipped});
             }
         }

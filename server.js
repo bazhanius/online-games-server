@@ -29,10 +29,23 @@ const {
     connect4ConvertFlatBoardTo2D,
     connect4Convert2dBoardToFlat,
     connect4CompressBoard,
-    connect4DecompressBoard
+    connect4DecompressBoard,
 } = require('./games-helpers/connect4-helpers');
+const {
+    connect5CreateBoard,
+    connect5MakeMove,
+    connect5GetGameStatus,
+    connect5CompressBoard,
+    connect5DecompressBoard
+} = require('./games-helpers/connect5-helpers');
 
 const log4js = require('log4js');
+const {
+    nardyCreateBoard,
+    nardyRollDice,
+    nardyMakeMove,
+    nardyGetAllPossibleMoves, nardyCompressBoard, nardyDecompressBoard
+} = require("./games-helpers/nardy-helpers");
 log4js.configure({
     appenders: {
         out: {type: "stdout"},
@@ -62,6 +75,7 @@ const ipConnections = {}; // Stores { 'IP_ADDRESS': count }
  *  GAMES
  */
 
+const GAMES_LIST = ['chess', 'battleship', 'reversi', 'connect4', 'connect5', 'nardy'];
 const games = {};
 
 const addGame = (sid, login, gameId, token, mode, name) => {
@@ -72,7 +86,7 @@ const addGame = (sid, login, gameId, token, mode, name) => {
         || !(login in users) // wrong login
         || users[login].token !== token // wrong token
         || !['PvP', 'PvE'].includes(mode) // wrong mode
-        || !['chess', 'battleship', 'reversi', 'connect4'].includes(name) // wrong game
+        || !GAMES_LIST.includes(name) // wrong game
     ) return;
 
     // allow only one game name (chess, battleship etc) at a time, for example only one 'chess' game for user
@@ -160,11 +174,36 @@ const addGame = (sid, login, gameId, token, mode, name) => {
         }
     }
 
+    if (name === 'connect5') {
+        games[gameId].moves = {
+            board: connect5CompressBoard(connect5CreateBoard()),
+            current_move: 'white', // white always first,
+            in_progress: false,
+        }
+    }
+
+    if (name === 'nardy') {
+        games[gameId].moves = {
+            board: nardyCompressBoard(nardyCreateBoard()),
+            dices: nardyRollDice(),
+            first_move: {
+                white: true,
+                black: true
+            },
+            from_head: {
+                white: 2,
+                black: 2
+            },
+            current_move: 'white', // white always first,
+            in_progress: false,
+        }
+    }
+
     io.sockets.emit('list of games', games);
 }
 
 const calcGameResult = (gameId) => {
-    if (gameId in games) {
+    if (gameId in games && !games[gameId].result) {
 
         if (games[gameId].name === 'chess') {
             let chess = new Chess();
@@ -232,16 +271,12 @@ const calcGameResult = (gameId) => {
             }
         }
 
-        if (games[gameId].name === 'connect4') {
+        if (games[gameId].name === 'connect4' || games[gameId].name === 'connect5' || games[gameId].name === 'nardy') {
             if (games[gameId].players.black === null && games[gameId].players.white !== null) {
                 // Black retired
                 games[gameId].result = 'white won';
             } else if (games[gameId].players.black !== null && games[gameId].players.white === null) {
                 // White retired
-                games[gameId].result = 'black won';
-            } else if (countWhite > countBlack) {
-                games[gameId].result = 'white won';
-            } else if (countBlack > countWhite) {
                 games[gameId].result = 'black won';
             } else {
                 games[gameId].result = 'draw';
@@ -288,6 +323,8 @@ const updateGame = (command, gameId, login, token, move = '', name = '') => {
             }
         }
         if (command === 'update_move'
+            && GAMES_LIST.includes(name)
+            && move
             // Allow update only from current players
             && (games[gameId].players.white === login || games[gameId].players.black === login)
         ) {
@@ -350,7 +387,7 @@ const updateGame = (command, gameId, login, token, move = '', name = '') => {
                                 JSON.parse(JSON.stringify(battleshipDecompressHits(games[gameId].moves.hits[color]))),
                             );
                         } catch (error) {
-                            logger.error('Error updating board:', error);
+                            logger.error('Error updating battleship board:', error);
                             newBoard = null;
                         }
                         if (updatedHitsAndShips) {
@@ -411,7 +448,7 @@ const updateGame = (command, gameId, login, token, move = '', name = '') => {
                             color
                         );
                     } catch (error) {
-                        logger.error('Error updating board:', error);
+                        logger.error('Error updating reversi board:', error);
                         newBoard = null;
                     }
 
@@ -489,7 +526,7 @@ const updateGame = (command, gameId, login, token, move = '', name = '') => {
                             color
                         );
                     } catch (error) {
-                        logger.error('Error updating board:', error);
+                        logger.error('Error updating connect4 board:', error);
                         newBoard = null;
                     }
 
@@ -513,6 +550,173 @@ const updateGame = (command, gameId, login, token, move = '', name = '') => {
                 } catch
                     (error) {
                     logger.error('Error processing connect4 move:', error);
+                } finally {
+                    // always reset in_progress, no matter what happens
+                    games[gameId].moves.in_progress = false;
+                }
+            }
+
+            if (name === 'connect5'
+                && games[gameId].status !== 'finished'
+                && !games[gameId].moves.in_progress) {
+
+                games[gameId].moves.in_progress = true;
+
+                try {
+                    let color = games[gameId].players.white === login
+                        ? 'white'
+                        : games[gameId].players.black === login
+                            ? 'black'
+                            : '';
+                    let opColor = color === 'white' ? 'black' : 'white';
+
+                    // computer move triggers by player
+                    if (games[gameId].moves.current_move === 'black' && games[gameId].players?.black === 'Computer') {
+                        color = color === 'white' ? 'black' : 'white';
+                        opColor = opColor === 'white' ? 'black' : 'white';
+                    }
+
+                    if (color === '' || games[gameId].moves.current_move !== color) {
+                        return; // But we need to reset in_progress!
+                    }
+
+                    let newBoard = null;
+                    let result = null;
+                    try {
+                        newBoard = connect5MakeMove(
+                            connect5DecompressBoard(games[gameId].moves.board),
+                            move.row,
+                            move.col,
+                            color === 'white' ? 1 : 2
+                        );
+                        result = connect5GetGameStatus(
+                            newBoard,
+                            color === 'white' ? 1 : 2 // any value in this case
+                        );
+                    } catch (error) {
+                        logger.error('Error updating connect5 board:', error);
+                        newBoard = null;
+                    }
+
+                    if (newBoard) {
+                        games[gameId].moves.board = connect5CompressBoard(newBoard);
+                    }
+
+                    if (result && result.gameOver) {
+                        games[gameId].status = 'finished';
+                        if (result.winner) {
+                            // only current color can win
+                            games[gameId].result = `${color} won`;
+                        } else {
+                            games[gameId].result = 'draw';
+                        }
+                    } else {
+                        games[gameId].moves.current_move = opColor;
+                    }
+
+                    isUpdated = true;
+                } catch
+                    (error) {
+                    logger.error('Error processing connect5 move:', error);
+                } finally {
+                    // always reset in_progress, no matter what happens
+                    games[gameId].moves.in_progress = false;
+                }
+            }
+
+            if (name === 'nardy'
+                && games[gameId].status !== 'finished'
+                && !games[gameId].moves.in_progress) {
+
+                games[gameId].moves.in_progress = true;
+
+                try {
+                    let color = games[gameId].players.white === login
+                        ? 'white'
+                        : games[gameId].players.black === login
+                            ? 'black'
+                            : '';
+                    let opColor = color === 'white' ? 'black' : 'white';
+
+                    // computer move triggers by player
+                    if (games[gameId].moves.current_move === 'black' && games[gameId].players?.black === 'Computer') {
+                        color = color === 'white' ? 'black' : 'white';
+                        opColor = opColor === 'white' ? 'black' : 'white';
+                    }
+
+                    if (color === '' || games[gameId].moves.current_move !== color) {
+                        return; // But we need to reset in_progress!
+                    }
+
+                    try {
+                        // Player make move
+                        if (move?.dice > 0) {
+                            let newBoard = null;
+                            // Make move
+                            newBoard = nardyMakeMove(
+                                nardyDecompressBoard(games[gameId].moves.board),
+                                color === 'white' ? 1 : -1,
+                                move
+                            );
+                            // Decrease dices left
+                            if (newBoard) {
+                                let diceNumber = null;
+                                if (games[gameId].moves.dices.d1 === move.dice
+                                    && games[gameId].moves.dices.d1l > 0) {
+                                    diceNumber = 1;
+                                } else if (games[gameId].moves.dices.d2 === move.dice
+                                    && games[gameId].moves.dices.d2l > 0) {
+                                    diceNumber = 2;
+                                }
+                                games[gameId].moves.board = nardyCompressBoard(newBoard.board);
+                                if (diceNumber === 1) {
+                                    games[gameId].moves.dices.d1l -= 1;
+                                } else if (diceNumber === 2) {
+                                    games[gameId].moves.dices.d2l -= 1;
+                                }
+
+                                if ((color === 'white' && move.from === 0)
+                                    || (color === 'black' && move.from === 23)) {
+                                    games[gameId].moves.from_head[color] -= 1;
+                                }
+                            }
+                            // Check for end game after move
+                            if (newBoard?.gameOver) {
+                                games[gameId].status = 'finished';
+                                games[gameId].result = `${color} won`;
+                            }
+                            // Check if current player can move again
+                            if (games[gameId].status !== 'finished') {
+                                let possibleMoves = nardyGetAllPossibleMoves(
+                                    nardyDecompressBoard(games[gameId].moves.board),
+                                    color === 'white' ? 1 : -1,
+                                    games[gameId].moves.dices
+                                );
+                                //let dicesLeft = games[gameId].moves.dices.d2l + games[gameId].moves.dices.d1l;
+                                let canMove = possibleMoves.length > 0;
+                                if (!canMove) {
+                                    games[gameId].moves.first_move[color] = false;
+                                    games[gameId].moves.from_head[color] = 1;
+                                    games[gameId].moves.current_move = opColor;
+                                    games[gameId].moves.dices = nardyRollDice();
+                                    // yeap, opponent might not can move also, and client will send it
+                                }
+                            }
+                        }
+                        // Player explicitly pass the move (client-side check)
+                        if (move?.dice === 0) {
+                            games[gameId].moves.current_move = opColor;
+                            games[gameId].moves.dices = nardyRollDice();
+                        }
+
+                    } catch (error) {
+                        logger.error('Error updating nardy board:', error);
+                    }
+
+                    isUpdated = true;
+                } catch
+                    (error) {
+                    logger.error('Error processing nardy move:', error);
                 } finally {
                     // always reset in_progress, no matter what happens
                     games[gameId].moves.in_progress = false;
@@ -557,13 +761,13 @@ const clearGames = () => {
                     if (msFromStart > msGameFinished && games[gameId].status !== 'finished') {
                         games[gameId].status = 'finished';
                         calcGameResult(gameId);
-                        logger.info(`Game ${gameId} finished due to time limit exceeded`);
+                        logger.info(`Game ${gameId} (${games[gameId]?.name}) finished due to time limit exceeded`);
                         shouldNotify = true;
                     }
                     // Delete games older than X minutes
                     if (msFromStart > msGameClosed) {
                         delete games[gameId];
-                        logger.info(`Game ${gameId} deleted due to time limit exceeded`);
+                        logger.info(`Game ${gameId} (${games[gameId]?.name}) deleted due to time limit exceeded`);
                         shouldNotify = true;
                     }
                 }
